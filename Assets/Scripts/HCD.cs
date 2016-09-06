@@ -1,4 +1,20 @@
-﻿using UnityEngine;
+﻿/*
+Copyright 2016 Etienne Sanquer
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+*/
+
+using UnityEngine;
 using System.Collections;
 using Emgu.CV;
 using Emgu.CV.Util;
@@ -8,17 +24,17 @@ using Emgu.CV.Structure;
 using System.Runtime.InteropServices;
 using System;
 using System.Drawing;
-
+using System.Threading;
 public class HCD : MonoBehaviour
 {
     private CascadeClassifier _FacescascadeClassifier;
     private CascadeClassifier _EyescascadeClassifier;
     private Capture capture;
 
-    private Point[] eyes;
+    private Point[] eyes; // unused unless noise is reduced
     private Point face;
-    private float focal = 1.84f;
-    private float pxTOMM = 0.0032f;
+    private float focal = 1.84f; // camera focal on my asus laptop ( approximated )
+    private float pxTOMM = 0.0032f;  // pixel to milimeter
 
     private Vector3 ViewerPositionFromScreen;
 
@@ -36,6 +52,11 @@ public class HCD : MonoBehaviour
 
     public Transform _screenCenter;
 
+
+    private Thread faceDetectionThread;
+
+    private bool treadRun;
+
     // Use this for initialization
     void Start()
     {
@@ -45,52 +66,66 @@ public class HCD : MonoBehaviour
         eyes = new Point[2];
         cameraInitialPos = camera.transform.position;
         initialised = false;
+        faceDetectionThread = new Thread(new ThreadStart(faceDetection));
+        
+        faceDetectionThread.Start();
     }
 
     // Update is called once per frame
+    private void faceDetection()
+    {
+        treadRun = true;
+        while (treadRun)
+        {
+            if (capture != null)
+            {
+                using (var imageFrame = capture.QueryFrame().ToImage<Bgr, Byte>())
+                {
+                    if (imageFrame != null)
+                    {
+                        imageFrame._SmoothGaussian(15); // reduce noise on face detection between frames
+                        grayFrame = imageFrame.Convert<Gray, byte>();
+                        // setting the ROI for tracking & perfs
+                        if (faceROI != null && initialised)
+                        {
+                            imageFrame.ROI = (new Rectangle(faceROI.X, faceROI.Y, faceROI.Width, faceROI.Height));
+                        }
+                        // grayframe._SmoothGaussian(5);
+
+                        var faces = _FacescascadeClassifier.DetectMultiScale(grayFrame, 1.1d, 5, Size.Empty, Size.Empty); //the actual face detection happens here
+
+                        if (faces.Length == 1)
+                        {
+                            faceROI = new Rectangle(faces[0].X - 50, faces[0].Y - 50, faces[0].Width + 100, faces[0].Height + 100);
+
+                            face = new Point(faces[0].X + (faces[0].Width / 2), faces[0].Y + (faces[0].Height / 2));
+
+                            // debug :
+                            // grayframe.ROI = faceROI;
+                            /* imageFrame.Draw(faces[0], new Bgr(System.Drawing.Color.Blue), 3);
+                             imageFrame.Draw(faceROI, new Bgr(System.Drawing.Color.Green), 3);
+                             imageFrame.Draw(new Rectangle(face.X-1, face.Y-1, 2,2), new Bgr(System.Drawing.Color.Green), 3);
+                             imageFrame.Save("C:\\Users\\esanquer\\Pictures\\unityPhoto_faces.jpg");*/
+                        }
+                        /*  var StoreEyes = _EyescascadeClassifier.DetectMultiScale(grayframe, 1.2d,10, Size.Empty, Size.Empty);
+                          if (StoreEyes.Length == 2)
+                          {
+                              for (int i = 0; i < StoreEyes.Length; i++)
+                              {
+                                  imageFrame.Draw(StoreEyes[i], new Bgr(System.Drawing.Color.Blue), 2);
+                                  eyes[i] = new Point((StoreEyes[i].X + StoreEyes[i].Width) / 2 + StoreEyes[i].X, (StoreEyes[i].Y + StoreEyes[i].Height) / 2 + StoreEyes[i].Y);
+                              }
+                          }*/
+
+                    }
+                }
+            }
+        }
+    }
+
     void Update()
     {
-        using (var imageFrame = capture.QueryFrame().ToImage<Bgr, Byte>())
-        {
-           
-            if (imageFrame != null)
-            {
-                imageFrame._SmoothGaussian(29);
-                grayFrame = imageFrame.Convert<Gray, byte>();
-                if (faceROI != null && initialised)
-                {
-                   imageFrame.ROI = (new Rectangle(faceROI.X, faceROI.Y, faceROI.Width, faceROI.Height));
-                }                
-               // grayframe._SmoothGaussian(5);
-
-                var faces = _FacescascadeClassifier.DetectMultiScale(grayFrame, 1.1d, 5, Size.Empty, Size.Empty); //the actual face detection happens here
-                
-                if (faces.Length == 1)
-                {
-                    faceROI = new Rectangle( faces[0].X - 50, faces[0].Y-50, faces[0].Width+100, faces[0].Height+100);
-
-                    face = new Point(faces[0].X + (faces[0].Width/ 2),faces[0].Y +( faces[0].Height / 2));
-                    
-                    // grayframe.ROI = faceROI;
-                   /* imageFrame.Draw(faces[0], new Bgr(System.Drawing.Color.Blue), 3);
-                    imageFrame.Draw(faceROI, new Bgr(System.Drawing.Color.Green), 3);
-                    imageFrame.Draw(new Rectangle(face.X-1, face.Y-1, 2,2), new Bgr(System.Drawing.Color.Green), 3);
-                    imageFrame.Save("C:\\Users\\esanquer\\Pictures\\unityPhoto_faces.jpg");*/
-                }
-                /*  var StoreEyes = _EyescascadeClassifier.DetectMultiScale(grayframe, 1.2d,10, Size.Empty, Size.Empty);
-                  if (StoreEyes.Length == 2)
-                  {
-                      for (int i = 0; i < StoreEyes.Length; i++)
-                      {
-                          imageFrame.Draw(StoreEyes[i], new Bgr(System.Drawing.Color.Blue), 2);
-                          eyes[i] = new Point((StoreEyes[i].X + StoreEyes[i].Width) / 2 + StoreEyes[i].X, (StoreEyes[i].Y + StoreEyes[i].Height) / 2 + StoreEyes[i].Y);
-                      }
-                  }*/
-               
-            }
-            
-        }
-
+        
         ViewerPositionFromScreen = caculateFacePosition();
         if (!initialised)
         {
@@ -103,7 +138,7 @@ public class HCD : MonoBehaviour
        // Debug.Log(ViewerPositionFromScreen.x +"  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
 
         Vector3 meterDeltaPos = ConvertFromMilimeterToUnity(ViewerPositionFromScreen );
-        Debug.Log(ViewerPositionFromScreen.x + "  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
+       // Debug.Log(ViewerPositionFromScreen.x + "  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
        // Debug.Log("to unity unit : ");
       //  Debug.Log(meterDeltaPos.x + "  ;  " + meterDeltaPos.y + "   ;   " + meterDeltaPos.z);
         camera.transform.position = _screenCenter.position - meterDeltaPos;
@@ -113,7 +148,10 @@ public class HCD : MonoBehaviour
 
     public void OnDestroy()
     {
+        treadRun = false;
         capture.Dispose();
+        capture = null;
+
     }
 
     private Vector3 ConvertFromMilimeterToUnity(Vector3 p)
