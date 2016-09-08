@@ -25,6 +25,7 @@ using System.Runtime.InteropServices;
 using System;
 using System.Drawing;
 using System.Threading;
+using UnityEngine.UI;
 public class HCD : MonoBehaviour
 {
     private CascadeClassifier _FacescascadeClassifier;
@@ -41,6 +42,8 @@ public class HCD : MonoBehaviour
     private Rectangle faceROI;
 
     public Camera camera;
+
+    public Slider focalSlider;
 
     private Vector3 cameraInitialPos;
     private Vector3 initialViewerPos;
@@ -69,6 +72,12 @@ public class HCD : MonoBehaviour
         faceDetectionThread = new Thread(new ThreadStart(faceDetection));
         
         faceDetectionThread.Start();
+
+        if (focalSlider != null)
+        {
+            focalSlider.onValueChanged.AddListener(this.updateFocalFromSliderValue);
+            focalSlider.value = focal;
+        }
     }
 
     // Update is called once per frame
@@ -83,7 +92,7 @@ public class HCD : MonoBehaviour
                 {
                     if (imageFrame != null)
                     {
-                        imageFrame._SmoothGaussian(15); // reduce noise on face detection between frames
+                        imageFrame._SmoothGaussian(5); // reduce noise on face detection between frames
                         grayFrame = imageFrame.Convert<Gray, byte>();
                         // setting the ROI for tracking & perfs
                         if (faceROI != null && initialised)
@@ -96,7 +105,7 @@ public class HCD : MonoBehaviour
 
                         if (faces.Length == 1)
                         {
-                            faceROI = new Rectangle(faces[0].X - 50, faces[0].Y - 50, faces[0].Width + 100, faces[0].Height + 100);
+                            faceROI = new Rectangle(faces[0].X - 80, faces[0].Y - 80, faces[0].Width + 160, faces[0].Height + 160);
 
                             face = new Point(faces[0].X + (faces[0].Width / 2), faces[0].Y + (faces[0].Height / 2));
 
@@ -206,12 +215,17 @@ public class HCD : MonoBehaviour
     {
         Vector2 posPlanXZ = new Vector2(ViewerPositionFromScreen.x, ViewerPositionFromScreen.z);
 
-        Vector2 screenBorderLeft = new Vector2(posPlanXZ.x - (345.44f / 2), 0);  //345.44f = largeur de l'écran en mm
+        Vector2 screenBorderLeft = new Vector2(posPlanXZ.x - (345.44f / 2), 0);  //345.44f = largeur de l'écran laptop en mm
         Vector2 screenBorderRight = new Vector2(posPlanXZ.x + (345.44f / 2), 0);
         float angle = Vector2.Angle(screenBorderLeft - posPlanXZ, screenBorderRight - posPlanXZ);
        // Debug.Log("Angle " + angle);
         camera.fieldOfView = angle;
         
 
+    }
+
+    public void updateFocalFromSliderValue(float value)
+    {
+        this.focal = value;
     }
 }
