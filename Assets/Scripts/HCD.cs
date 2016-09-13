@@ -34,12 +34,14 @@ public class HCD : MonoBehaviour
 
     private Point[] eyes; // unused unless noise is reduced
     private Point face;
-    private float focal = 1.84f; // camera focal on my asus laptop ( approximated )
-    private float pxTOMM = 0.0032f;  // pixel to milimeter
-
+    private float focal = 1.1f; // camera focal on my laptop ( poorly approximated )
+    private float pxTOMM = 0.0032f;  // pixel to milimeter ( poorly approximated )
+    private float sensorHeight = 1f;
     private Vector3 ViewerPositionFromScreen;
 
+    private Rectangle[] faces;
     private Rectangle faceROI;
+    private Rectangle faceRect;
 
     public Camera camera;
 
@@ -76,7 +78,7 @@ public class HCD : MonoBehaviour
         if (focalSlider != null)
         {
             focalSlider.onValueChanged.AddListener(this.updateFocalFromSliderValue);
-            focalSlider.value = focal;
+            focalSlider.value = 640f;
         }
     }
 
@@ -97,24 +99,37 @@ public class HCD : MonoBehaviour
                         // setting the ROI for tracking & perfs
                         if (faceROI != null && initialised)
                         {
-                            imageFrame.ROI = (new Rectangle(faceROI.X, faceROI.Y, faceROI.Width, faceROI.Height));
+                            faces = _FacescascadeClassifier.DetectMultiScale(grayFrame, 1.1d, 3, new Size(faceRect.Width * 8 / 10, faceRect.Height * 8 / 10), new Size(faceRect.Width * 12 / 10, faceRect.Width * 12 / 10)); //the actual face detection happens here
+                            if (faces.Length == 1)
+                            {
+                                faceRect = faces[0];
+
+                                faceROI = new Rectangle(faces[0].X - 80, faces[0].Y - 80, faces[0].Width + 160, faces[0].Height + 160);
+                                imageFrame.ROI = (new Rectangle(faceROI.X, faceROI.Y, faceROI.Width, faceROI.Height));
+                                face = new Point(faces[0].X + (faces[0].Width / 2), faces[0].Y + (faces[0].Height / 2));
+
+                            }
+
                         }
                         // grayframe._SmoothGaussian(5);
-
-                        var faces = _FacescascadeClassifier.DetectMultiScale(grayFrame, 1.1d, 5, Size.Empty, Size.Empty); //the actual face detection happens here
-
-                        if (faces.Length == 1)
+                        else
                         {
-                            faceROI = new Rectangle(faces[0].X - 80, faces[0].Y - 80, faces[0].Width + 160, faces[0].Height + 160);
+                            faces = _FacescascadeClassifier.DetectMultiScale(grayFrame, 1.1d, 3, new Size(grayFrame.Rows / 5, grayFrame.Rows / 5), new Size(grayFrame.Rows * 2 / 3, grayFrame.Rows * 2 / 3)); //the actual face detection happens here
 
-                            face = new Point(faces[0].X + (faces[0].Width / 2), faces[0].Y + (faces[0].Height / 2));
+                            if (faces.Length == 1)
+                            {
+                                faceROI = new Rectangle(faces[0].X - 80, faces[0].Y - 80, faces[0].Width + 160, faces[0].Height + 160);
+                                imageFrame.ROI = (new Rectangle(faceROI.X, faceROI.Y, faceROI.Width, faceROI.Height));
+                                faceRect = faces[0];
+                                face = new Point(faces[0].X + (faces[0].Width / 2), faces[0].Y + (faces[0].Height / 2));
 
-                            // debug :
-                            // grayframe.ROI = faceROI;
-                            /* imageFrame.Draw(faces[0], new Bgr(System.Drawing.Color.Blue), 3);
-                             imageFrame.Draw(faceROI, new Bgr(System.Drawing.Color.Green), 3);
-                             imageFrame.Draw(new Rectangle(face.X-1, face.Y-1, 2,2), new Bgr(System.Drawing.Color.Green), 3);
-                             imageFrame.Save("C:\\Users\\esanquer\\Pictures\\unityPhoto_faces.jpg");*/
+                                // debug :
+                                // grayframe.ROI = faceROI;
+                                /* imageFrame.Draw(faces[0], new Bgr(System.Drawing.Color.Blue), 3);
+                                 imageFrame.Draw(faceROI, new Bgr(System.Drawing.Color.Green), 3);
+                                 imageFrame.Draw(new Rectangle(face.X-1, face.Y-1, 2,2), new Bgr(System.Drawing.Color.Green), 3);
+                                 imageFrame.Save("C:\\Users\\esanquer\\Pictures\\unityPhoto_faces.jpg");*/
+                            }
                         }
                         /*  var StoreEyes = _EyescascadeClassifier.DetectMultiScale(grayframe, 1.2d,10, Size.Empty, Size.Empty);
                           if (StoreEyes.Length == 2)
@@ -226,6 +241,12 @@ public class HCD : MonoBehaviour
 
     public void updateFocalFromSliderValue(float value)
     {
-        this.focal = value;
+        this.focal = value* pxTOMM;
+    }
+
+    public void updateSensorHeightFromSliderValue(float value)
+    {
+        this.sensorHeight = value;
+        pxTOMM = this.sensorHeight / 480;
     }
 }
