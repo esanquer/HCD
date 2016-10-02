@@ -34,7 +34,7 @@ public class HCD : MonoBehaviour
 
     private Point[] eyes; // unused unless noise is reduced
     private Point face;
-    private float focal = 1.1f; // camera focal on my laptop ( poorly approximated )
+    private float focal = 721f; // camera focal on my laptop ( poorly approximated )
     private float pxTOMM = 0.0032f;  // pixel to milimeter ( poorly approximated )
     private float sensorHeight = 1f;
     private Vector3 ViewerPositionFromScreen;
@@ -45,7 +45,12 @@ public class HCD : MonoBehaviour
 
     public Camera camera;
 
-    public Slider focalSlider;
+    public Slider YOffsetSlider;
+    public float leftValue;
+    public Slider GaussianBlurDistanceSlider;
+    public Slider RightValueSlider;
+    public Slider TopValueSlider;
+    public Slider BottomValueSlider;
 
     private Vector3 cameraInitialPos;
     private Vector3 initialViewerPos;
@@ -57,7 +62,7 @@ public class HCD : MonoBehaviour
 
     public Transform _screenCenter;
 
-
+    float w, h;
     private Thread faceDetectionThread;
 
     private bool treadRun;
@@ -65,20 +70,29 @@ public class HCD : MonoBehaviour
     // Use this for initialization
     void Start()
     {
-       capture = new Capture(); //create a camera captue
+        capture = new Capture(); //create a camera captue
         _FacescascadeClassifier = new CascadeClassifier("C:/Emgu/emgucv-windows-universal 3.0.0.2157/opencv/data/haarcascades/haarcascade_frontalface_default.xml");
         _EyescascadeClassifier = new CascadeClassifier("C:/Emgu/emgucv-windows-universal 3.0.0.2157/opencv/data/haarcascades/haarcascade_eye.xml");
         eyes = new Point[2];
+        camera.transform.position = _screenCenter.transform.position;
         cameraInitialPos = camera.transform.position;
         initialised = false;
         faceDetectionThread = new Thread(new ThreadStart(faceDetection));
-        
+        var orig = camera.projectionMatrix;
+        w = 2 * camera.nearClipPlane / orig.m00;
+        h = 2 * camera.nearClipPlane / orig.m11;
+
+        Debug.Log("w : " + w);
+        Debug.Log("h : " + h);
+        Debug.Log("near : " + camera.nearClipPlane);
         faceDetectionThread.Start();
 
-        if (focalSlider != null)
+        using (var imageFrame = capture.QueryFrame().ToImage<Bgr, Byte>())
         {
-            focalSlider.onValueChanged.AddListener(this.updateFocalFromSliderValue);
-            focalSlider.value = 640f;
+            if (imageFrame != null)
+            {
+                imageFrame.Save("C:\\Users\\esanquer\\Pictures\\unityPhoto_mesure.jpg");
+            }
         }
     }
 
@@ -94,7 +108,7 @@ public class HCD : MonoBehaviour
                 {
                     if (imageFrame != null)
                     {
-                        imageFrame._SmoothGaussian(5); // reduce noise on face detection between frames
+                       // imageFrame._SmoothGaussian(5); // reduce noise on face detection between frames
                         grayFrame = imageFrame.Convert<Gray, byte>();
                         // setting the ROI for tracking & perfs
                         if (faceROI != null && initialised)
@@ -162,12 +176,37 @@ public class HCD : MonoBehaviour
        // Debug.Log(ViewerPositionFromScreen.x +"  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
 
         Vector3 meterDeltaPos = ConvertFromMilimeterToUnity(ViewerPositionFromScreen );
-       // Debug.Log(ViewerPositionFromScreen.x + "  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
-       // Debug.Log("to unity unit : ");
-      //  Debug.Log(meterDeltaPos.x + "  ;  " + meterDeltaPos.y + "   ;   " + meterDeltaPos.z);
-        camera.transform.position = _screenCenter.position - meterDeltaPos;
-        camera.transform.LookAt(_screenCenter.position);
-        CalculateFOV();
+        // Debug.Log(ViewerPositionFromScreen.x + "  ;  " + ViewerPositionFromScreen.y + "   ;   " + ViewerPositionFromScreen.z);
+        // Debug.Log("to unity unit : ");
+        //  Debug.Log(meterDeltaPos.x + "  ;  " + meterDeltaPos.y + "   ;   " + meterDeltaPos.z);
+        Vector3 pos = _screenCenter.position - meterDeltaPos;
+        camera.transform.position = pos;
+        camera.transform.LookAt(_screenCenter.position + meterDeltaPos);
+        /*   float left = LeftValueSlider.value;
+           float right = RightValueSlider.value;
+           float top = TopValueSlider.value;
+           float bottom = BottomValueSlider.value;
+
+           var m = cam.projectionMatrix;
+           var w = 2 * cam.nearClipPlane / m.m00;
+           var h = 2 * cam.nearClipPlane / m.m11;
+           */
+
+
+
+        var left = -w / 2 + meterDeltaPos.x*0.1f ;
+        var right = left + w ;
+        var bottom = -h / 2 + meterDeltaPos.y*0.1f;
+        var top = bottom + h;
+
+        //Debug.Log(meterDeltaPos.z);
+        var near = camera.nearClipPlane + meterDeltaPos.z*0.1f;
+        Debug.Log(near);
+       // camera.fieldOfView = CalculateFOV();
+        Matrix4x4 m = PerspectiveOffCenter(left,right, bottom, top, near, camera.farClipPlane);
+        camera.projectionMatrix = m;
+        
+        //CalculateFOV();
     }
 
     public void OnDestroy()
@@ -214,39 +253,81 @@ public class HCD : MonoBehaviour
         float distancePX = faceROI.Width; // on prend comme repere d'echelle la largeur du visage dans l'image
         float Pmm = 150f;  // on dit que  cette largeur vaut 150mm
 
-        float YposMM = (yPX * Pmm) / distancePX;
+        float YposMM =( (yPX * Pmm) / distancePX) + YOffsetSlider.value;
         float XposMM = (xPX * Pmm) / distancePX;
 
+        float zmm = (focal * Pmm) / faceRect.Width;
 
-        float Zx = (focal * XposMM - (xPX * pxTOMM)) / (xPX * pxTOMM);
-        float Zy = (focal * YposMM - (yPX * pxTOMM)) / (yPX * pxTOMM);
-        float Z = (Zx + Zy) / 2;  // on moyenne deux mesures de distance en fonction de y et de y
+        float px_to_mm = 150 / faceRect.Width;
 
-        return new Vector3(XposMM, YposMM , Z);
+       Debug.Log("x : " + XposMM + " ; y : " + YposMM + " z : " + zmm);
+        
+        return new Vector3(XposMM, YposMM , zmm);
+
 
     }
 
-    private void CalculateFOV()
+    private Matrix4x4 PerspectiveOffCenter(float left, float right, float bottom, float top, float near, float far)
     {
-        Vector2 posPlanXZ = new Vector2(ViewerPositionFromScreen.x, ViewerPositionFromScreen.z);
+        float x = 2.0F * near / (right - left); // focal x
+        float y = 2.0F * near / (top - bottom); // focal y
+        float a = (right + left) / (right - left);
+        float b = (top + bottom) / (top - bottom);
+        float c = -(far + near) / (far - near);
+        float d = -(2.0F * far * near) / (far - near);
+        float e = -1.0F;
+        Matrix4x4 m = new Matrix4x4();
+        m[0, 0] = x;
+        m[0, 1] = 0;
+        m[0, 2] = a;
+        m[0, 3] = 0;
+        m[1, 0] = 0;
+        m[1, 1] = y;
+        m[1, 2] = b;
+        m[1, 3] = 0;
+        m[2, 0] = 0;
+        m[2, 1] = 0;
+        m[2, 2] = c;
+        m[2, 3] = d;
+        m[3, 0] = 0;
+        m[3, 1] = 0;
+        m[3, 2] = e;
+        m[3, 3] = 0;
+        return m;
+    }
 
-        Vector2 screenBorderLeft = new Vector2(posPlanXZ.x - (345.44f / 2), 0);  //345.44f = largeur de l'écran laptop en mm
-        Vector2 screenBorderRight = new Vector2(posPlanXZ.x + (345.44f / 2), 0);
-        float angle = Vector2.Angle(screenBorderLeft - posPlanXZ, screenBorderRight - posPlanXZ);
+
+    private float CalculateFOV()
+    {
+        Vector2 posPlanYZ = new Vector2(ViewerPositionFromScreen.y, ViewerPositionFromScreen.z);
+
+        Vector2 screenBorderTop = new Vector2(posPlanYZ.x - (194.31f / 2), 0);  //345.44f = hauteur de l'écran laptop en mm
+        Vector2 screenBorderBottom= new Vector2(posPlanYZ.x + (194.31f / 2), 0);
+        float angle = Vector2.Angle(screenBorderTop - posPlanYZ, screenBorderBottom - posPlanYZ);
        // Debug.Log("Angle " + angle);
-        camera.fieldOfView = angle;
+        return angle;
         
 
     }
 
     public void updateFocalFromSliderValue(float value)
     {
-        this.focal = value* pxTOMM;
+       // this.focal = value;
     }
+
+
+    public void updatePxToMMFromSliderValue(float value)
+    {
+       // this.pxTOMM = value;
+    }
+
+
 
     public void updateSensorHeightFromSliderValue(float value)
     {
         this.sensorHeight = value;
         pxTOMM = this.sensorHeight / 480;
     }
+
+
 }
